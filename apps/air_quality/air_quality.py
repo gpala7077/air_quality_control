@@ -1215,7 +1215,7 @@ class AirQuality(hass.Hass):
 
         humidifier_penalties = self.check_air_quality_mode_penalties('oil_diffuser')
 
-        if any(humidifier_penalties):
+        if any(humidifier_penalties.values()):
             return
 
         if self.args.get('use_regex_matching', True):
@@ -1262,7 +1262,7 @@ class AirQuality(hass.Hass):
             )
         humidifier_penalties = self.check_air_quality_mode_penalties('oil_diffuser')
 
-        if any(humidifier_penalties):
+        if any(humidifier_penalties.values()):
             return
 
         if self.args.get('use_regex_matching', True):
@@ -1319,7 +1319,6 @@ class AirQuality(hass.Hass):
 
     def set_purifier_mode(self, room):
         app_name = 'air_quality'
-        noise_intolerance = ['Commute', 'Sleep', 'Work']
         purifier_entity = self.get_air_quality_entities('room').get('purifier')
         fan_penalties = self.check_air_quality_mode_penalties('purifier')
 
@@ -1339,9 +1338,7 @@ class AirQuality(hass.Hass):
 
     def set_humidifier_mode(self, room):
         app_name = 'air_quality'
-        noise_intolerance = ['Commute', 'Sleep']
         humidifier_entities = self.get_air_quality_entities('room').get('humidifier')
-
         humidifier_penalties = self.check_air_quality_mode_penalties('humidifier')
 
         if any(humidifier_penalties.values()) and room != 'bedroom':
