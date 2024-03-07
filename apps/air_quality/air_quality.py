@@ -40,29 +40,44 @@ class AirQuality(hass.Hass):
 
     def create_cron_jobs(self):
         """Create cron jobs."""
+
         cron_jobs = {
             'Air Circulation': dict(
                 run_on_reload=False,  # Don't run the automation immediately
                 minutes=10,  # Amount of time to run the automation. Specific to circulate_air_logic
-                cron_pattern=time(0, 0, 0),  # Every 2 hours on the hour
+                cron_pattern=time(
+                    self.args.get('cron_job_schedule', {}).get('air_circulation', {}).get('hour', 0),
+                    self.args.get('cron_job_schedule', {}).get('air_circulation', {}).get('minute', 0),
+                    self.args.get('cron_job_schedule', {}).get('air_circulation', {}).get('second', 0)
+                ),  # Every 2 hours on the hour
                 cron_func='run_every',
-                cron_interval=60*60*2,  # 2 hours
+                cron_interval=self.args.get('cron_job_schedule').get('air_circulation').get('interval', 60*60*2),
                 logic_func=self.circulate_air_logic,
             ),
 
             'Humidify': dict(
                 run_on_reload=False,  # Don't run the automation immediately
                 minutes=5,  # Amount of time to run the automation. Specific to humidifier_logic
-                cron_pattern=time(0, 15, 0),  # Every hour on the 15th minute
-                cron_func='run_hourly',
+                cron_pattern=time(
+                    self.args.get('cron_job_schedule', {}).get('humidify', {}).get('hour', 0),
+                    self.args.get('cron_job_schedule', {}).get('humidify', {}).get('minute', 15),
+                    self.args.get('cron_job_schedule', {}).get('humidify', {}).get('second', 0)
+                ),  # Every 2 hours on the hour
+                cron_func='run_every',
+                cron_interval=self.args.get('cron_job_schedule', {}).get('humidify', {}).get('interval', 60*60),
                 logic_func=self.humidify_logic,
             ),
 
             'Deodorize and Refresh': dict(
                 run_on_reload=False,  # Don't run the automation immediately
                 minutes=2,  # Amount of time to run the automation. Specific to deodorize_and_refresh_logic
-                cron_pattern=time(0, 30, 0),  # Every hour between 8am and 11pm at the 30th minute
-                cron_func='run_hourly',
+                cron_pattern=time(
+                    self.args.get('cron_job_schedule', {}).get('deodorize_and_refresh', {}).get('hour', 0),
+                    self.args.get('cron_job_schedule', {}).get('deodorize_and_refresh', {}).get('minute', 30),
+                    self.args.get('cron_job_schedule', {}).get('deodorize_and_refresh', {}).get('second', 0)
+                ),  # Every 2 hours on the hour
+                cron_func='run_every',
+                cron_interval=self.args.get('cron_job_schedule').get('deodorize_and_refresh').get('interval', 60*60),
                 logic_func=self.deodorize_and_refresh_logic,
             )
         }
@@ -216,10 +231,10 @@ class AirQuality(hass.Hass):
                 ),
             }
         else:
-            config = self.args.get('rooms').get(room)
-            purifiers = {entity: self.get_state(entity) for entity, value in config.get('purifier', {}).items() if value}
-            humidifiers = {entity: self.get_state(entity) for entity, value in config.get('humidifier', {}).items() if value}
-            diffusers = {entity: self.get_state(entity) for entity, value in config.get('oil_diffuser', {}).items() if value}
+            config = self.args.get('rooms').get(room).get('devices')
+            purifiers = {entity: self.get_state(entity) for entity in config.get('purifier', [])}
+            humidifiers = {entity: self.get_state(entity) for entity in config.get('humidifier', [])}
+            diffusers = {entity: self.get_state(entity) for entity in config.get('oil_diffuser', [])}
 
             return {
                 'purifier': purifiers,
@@ -275,12 +290,12 @@ class AirQuality(hass.Hass):
 
         else:
             config = self.args.get('rooms').get(room)
-            states = {}
+            occupancy = {}
             for entity in config.get('occupancy', []):
-                if self.get_state(entity) in states:
-                    states[self.get_state(entity)] += 1
+                if self.get_state(entity) in occupancy:
+                    occupancy[self.get_state(entity)] += 1
                 else:
-                    states.update({self.get_state(entity): 1})
+                    occupancy.update({self.get_state(entity): 1})
 
         return occupancy.get('on', 0) > 0
 
@@ -307,9 +322,9 @@ class AirQuality(hass.Hass):
                 'current_humidity': current_humidity if current_humidity else 45
             }
         else:
-            config = self.args.get('rooms').get(room)
-            pm2_5 = {entity: self.get_state(entity) for entity in config.get('sensors').get('pm2_5', [])}
-            humidity = {entity: self.get_state(entity) for entity in config.get('sensors').get('current_humidity', [])}
+            config = self.args.get('rooms').get(room).get('sensors')
+            pm2_5 = {entity: self.get_state(entity) for entity in config.get('pm2_5', [])}
+            humidity = {entity: self.get_state(entity) for entity in config.get('current_humidity', [])}
 
             self.room_sensor_data[room] = {
                 'recorded': datetime.now(),
@@ -346,6 +361,7 @@ class AirQuality(hass.Hass):
                 )
 
             else:
+                config = config.get('sensors')
                 binary_sensors = config.get('occupancy', [])
                 pm2_5 = config.get('pm2_5', [])
                 current_humidity = config.get('current_humidity', [])
@@ -486,9 +502,17 @@ class AirQuality(hass.Hass):
             self.automations.command_matching_entities(
                 hacs_commands='turn_off',
                 area=room,
-                domain=['light', 'humidifier'],
+                domain=['humidifier'],
                 pattern=self.args.get('regex_matching').get('devices').get('oil_diffuser', 'oil_diffuser$'),
             )
+
+            self.automations.command_matching_entities(
+                hacs_commands='turn_off',
+                area=room,
+                domain=['light'],
+                pattern=self.args.get('regex_matching').get('devices').get('oil_diffuser', 'oil_diffuser$').strip('$'),
+            )
+
         else:
             oil_diffuser = self.get_air_quality_entities(room).get('oil_diffuser')
             self.automations.command_matching_entities(
@@ -1268,7 +1292,6 @@ class AirQuality(hass.Hass):
         global_penalties = {
             'eco_mode': self.get_state("input_select.house_mode") == 'Eco',
             'entertainment_mode': self.get_state("input_boolean.entertainment_mode") == 'on',
-            'quiet_mode': self.get_state("input_boolean.quiet_mode") == 'on',
             'night_mode': self.get_state("input_select.house_mode") == 'Night',
         }
 
