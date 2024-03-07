@@ -132,6 +132,27 @@ air_quality:
 
 
 The most basic configuration to start out with can be as simple as if you are using ReGex Matching.
+
+This will auto-discover your entities and rooms accordingly.
+It assumes the following naming convention:
+domain.room_device_type
+or 
+domain_room_device_type_sensor
+
+so for example:
+- humidifier.living_room_humidifier
+- sensor.living_room_humidifier_current_humidity
+
+or
+- binary_sensor.living_room_occupancy_1
+- binary_sensor.living_room_occupancy_2
+
+or 
+- fan.living_room_purifier
+- sensor.living_room_purifier_pm2_5
+
+I provided the default values for ReGex Matching but you can tweak them to your liking.
+
 ```yaml
 air_quality:
   module: air_quality

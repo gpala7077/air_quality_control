@@ -404,53 +404,6 @@ class AirQuality(hass.Hass):
                     sensor_type='current_humidity'
                 )
 
-    def create_room_based_automations_hardcoded(self):
-        """Create room based occupancy and sensor triggers."""
-        # Get room configuration
-        room_config = self.args.get('rooms')
-        for room_id, config in room_config.items():
-            binary_sensors = config.get('occupancy', [])
-            pm2_5 = config.get('pm2_5', [])
-            current_humidity = config.get('current_humidity', [])
-
-            # Get all device statuses
-            controllable = self.get_air_quality_entities(room_id)
-
-            # Listen for occupancy changes
-            for binary_sensor in binary_sensors:
-                if any([bool(device) for device in controllable.values()]):
-                    self.listen_state(
-                        self.master_air_quality_logic,
-                        binary_sensor,
-                        new='on',
-                        room=room_id,
-                    )
-                    self.listen_state(
-                        self.turn_off_air_quality_devices,
-                        binary_sensor,
-                        new='off',
-                        room=room_id,
-                        include_priority=True,
-                        duration=self.args.get('inactivity_time', 600),
-                        check_for_occupancy=True,
-                    )
-
-            # Listen for sensor changes
-            for sensor in pm2_5:
-                self.listen_state(
-                    self.check_sensor_changes,
-                    sensor,
-                    room=room_id,
-                    sensor_type='pm2_5'
-                )
-            for sensor in current_humidity:
-                self.listen_state(
-                    self.check_sensor_changes,
-                    sensor,
-                    room=room_id,
-                    sensor_type='current_humidity'
-                )
-
     def check_sensor_changes(self, *args, **kwargs):
         room = kwargs.get('room')
         sensor_type = kwargs.get('sensor_type')
@@ -464,12 +417,12 @@ class AirQuality(hass.Hass):
             return
 
         last_reading = self.room_sensor_data[room].get(sensor_type)
-
-        if abs((new / last_reading) - 1) > self.args.get('sensor_deviation', .30):
+        deviation = self.args.get('sensor_deviation', .30)
+        if abs((new / last_reading) - 1) > deviation:
             self.log(
                 f"""
                 In check_sensor_changes - {room}:
-                {sensor_type} has changed by more than 30%.
+                {sensor_type} has changed by more than {deviation: .2%}.
                 Last Reading: {last_reading}
                 Current Reading: {new}
                 """,
@@ -498,30 +451,12 @@ class AirQuality(hass.Hass):
                 self.turn_off_logic[other_device](room=room)
 
     def turn_off_diffuser(self, room, **kwargs):
-        if self.args.get('use_regex_matching', True):
-            self.automations.command_matching_entities(
-                hacs_commands='turn_off',
-                area=room,
-                domain=['humidifier'],
-                pattern=self.args.get('regex_matching').get('devices').get('oil_diffuser', 'oil_diffuser$'),
-            )
-
-            self.automations.command_matching_entities(
-                hacs_commands='turn_off',
-                area=room,
-                domain=['light'],
-                pattern=self.args.get('regex_matching').get('devices').get('oil_diffuser', 'oil_diffuser$').strip('$'),
-            )
-
-        else:
-            oil_diffuser = self.get_air_quality_entities(room).get('oil_diffuser')
-            self.automations.command_matching_entities(
-                hacs_commands='turn_off',
-                area=room,
-                domain=['humidifier'],
-                include_only=True,
-                include_manual_entities=list(oil_diffuser.keys()),
-            )
+        self.run_in(
+            self.diffuser_cycle_off,
+            delay=0,
+            room=room,
+            end_cycle=True,
+        )
 
     def turn_off_humidifier(self, room, **kwargs):
         if self.args.get('use_regex_matching', True):
@@ -665,7 +600,11 @@ class AirQuality(hass.Hass):
                 )
 
     def turn_on_diffuser(self, room, **kwargs):
-        self.run_in(self.diffuser_cycle_logic, 0, room=room)
+        self.run_in(
+            self.diffuser_cycle_logic,
+            delay=0,
+            room=room
+        )
 
     def master_air_quality_logic(self, *args, **kwargs):
 
@@ -1173,6 +1112,7 @@ class AirQuality(hass.Hass):
 
         # Don't turn back on if it is in its cool off period
         if not self.diffuser_cycle_thread[room]:
+            self.log(f"{room.title()} Diffuser is in cool off period. Exiting...", level='INFO')
             return
 
         # Get current grade level
@@ -1193,6 +1133,7 @@ class AirQuality(hass.Hass):
 
     def diffuser_cycle_off(self, *args, **kwargs):
         room = kwargs.get('room')
+        end_cycle = kwargs.get('end_cycle', False)
         self.diffuser_cycle_thread[room] = False
         if self.args.get('use_regex_matching', True):
             response = self.automations.command_matching_entities(
@@ -1219,14 +1160,24 @@ class AirQuality(hass.Hass):
             return
 
         if self.args.get('use_regex_matching', True):
-            diffuser_light_entity = self.automations.command_matching_entities(
-                hacs_commands='turn_on',
-                area=room,
-                domain='light',
-                pattern=self.args.get('regex_matching').get('devices').get('oil_diffuser', 'oil_diffuser$').strip('$'),
-                color_name='red',
-                brightness=100
-            )
+            pattern = self.args.get('regex_matching').get('devices').get('oil_diffuser', 'oil_diffuser$').strip('$')
+            if end_cycle:
+                diffuser_light_entity = self.automations.command_matching_entities(
+                    hacs_commands='turn_off',
+                    area=room,
+                    domain='light',
+                    pattern=pattern,
+                )
+
+            else:
+                diffuser_light_entity = self.automations.command_matching_entities(
+                    hacs_commands='turn_on',
+                    area=room,
+                    domain='light',
+                    pattern=pattern,
+                    color_name='red',
+                    brightness=100
+                )
         self.log(f"\n{room} - Diffuser Cycle OFF:\n{response}\n{diffuser_light_entity}\n", level="INFO")
 
     def diffuser_cycle_on(self, *args, **kwargs):
