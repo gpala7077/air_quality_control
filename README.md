@@ -9,6 +9,7 @@ This repository is not part of the default HACS store. To add it to your HACS, y
 custom repository. To do this, go to the HACS settings and add the following URL as a custom repository and choose
 'AppDaemon' as the category:
 
+Enter this URL: https://github.com/gpala7077/air_quality_control.git
 
 It will look like this:
   <div style="display: flex; justify-content: space-around;">
