@@ -1,8 +1,8 @@
 # Installation
 Assumption: You have already installed HACS, AppDaemon and Gerardo's ReGex SmartHome Entity Matching App.
-If you do not have HACS installed, please follow the instructions here: https://hacs.xyz/docs/installation/manual.
-If you do not have AppDaemon installed, please follow the instructions here:https://appdaemon.readthedocs.io/en/latest/INSTALL.html
-If you do not have Gerardo's ReGex SmartHome Entity Matching App installed, please follow the instructions here: https://github.com/gpala7077/regex_smart_home
+1. If you do not have HACS installed, please follow the instructions here: https://hacs.xyz/docs/installation/manual.
+2. If you do not have AppDaemon installed, please follow the instructions here:https://appdaemon.readthedocs.io/en/latest/INSTALL.html
+3. If you do not have Gerardo's ReGex SmartHome Entity Matching App installed, please follow the instructions here: https://github.com/gpala7077/regex_smart_home
 
 
 This repository is not part of the default HACS store. To add it to your HACS, you need to add it as a
