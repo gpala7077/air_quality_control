@@ -6,7 +6,7 @@ custom repository. To do this, go to the HACS settings and add the following URL
 
 It will look like this:
   <div style="display: flex; justify-content: space-around;">
-  <div><img src="/apps/static/custom_repository.png" alt="Range" style="width: 10%; max-width: 500px;"/></div>
+  <div><img src="/apps/static/custom_repository.png" alt="Range" style="width: 25%; max-width: 500px;"/></div>
   </div>
 
 
