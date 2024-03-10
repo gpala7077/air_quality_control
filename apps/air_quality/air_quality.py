@@ -51,7 +51,7 @@ class AirQuality(hass.Hass):
                     self.args.get('cron_job_schedule', {}).get('air_circulation', {}).get('second', 0)
                 ),  # Every 2 hours on the hour
                 cron_func='run_every',
-                cron_interval=self.args.get('cron_job_schedule').get('air_circulation').get('interval', 60*60*2),
+                cron_interval=self.args.get('cron_job_schedule').get('air_circulation').get('interval', 60 * 60 * 2),
                 logic_func=self.circulate_air_logic,
             ),
 
@@ -64,7 +64,7 @@ class AirQuality(hass.Hass):
                     self.args.get('cron_job_schedule', {}).get('humidify', {}).get('second', 0)
                 ),  # Every 2 hours on the hour
                 cron_func='run_every',
-                cron_interval=self.args.get('cron_job_schedule', {}).get('humidify', {}).get('interval', 60*60),
+                cron_interval=self.args.get('cron_job_schedule', {}).get('humidify', {}).get('interval', 60 * 60),
                 logic_func=self.humidify_logic,
             ),
 
@@ -77,7 +77,7 @@ class AirQuality(hass.Hass):
                     self.args.get('cron_job_schedule', {}).get('deodorize_and_refresh', {}).get('second', 0)
                 ),  # Every 2 hours on the hour
                 cron_func='run_every',
-                cron_interval=self.args.get('cron_job_schedule').get('deodorize_and_refresh').get('interval', 60*60),
+                cron_interval=self.args.get('cron_job_schedule').get('deodorize_and_refresh').get('interval', 60 * 60),
                 logic_func=self.deodorize_and_refresh_logic,
             )
         }
@@ -132,15 +132,28 @@ class AirQuality(hass.Hass):
         # Create room-level automation switches
         room_config = self.automations.areas if self.args.get('use_regex_matching', True) else self.args.get('rooms')
         for room_id, room_name in room_config.items():
+
+            # Create last activated device entity if it does not exist
+            if self.get_state(f'input_text.{room_id}_air_quality_priority_device') is None:
+                self.set_state(f'input_text.{room_id}_air_quality_priority_device', state='purifier')
+
+            # Get Priority Device Activation Data
+            priority_device = self.automations.get_matching_entities(
+                area=room_id,
+                domain='input_text',
+                pattern=f'air_quality_priority_device$',
+                get_attribute='timedelta',
+            )
+            for device_type, info in priority_device.items():
+                self.priority_devices[room_id] = {'device': device_type, 'time': datetime.now() - info['timedelta']}
+
             self.master_air_quality_thread[room_id] = {}
             self.room_penalties_data[room_id] = {}
             self.room_sensor_data[room_id] = {}
             self.diffuser_cycle_thread[room_id] = {}
-            self.priority_devices[room_id] = {'device': 'purifier', 'time': datetime.now() - timedelta(seconds=600)}
-            self.diffuser_cycle_thread[room_id] = True
             self.cron_jobs[room_id] = {}
             self.get_sensor_data(room_id)  # Initialize sensor data
-            self.set_state(f'input_text.{room_id}_air_quality_priority_device', state='purifier')
+
             for device_type in device_types:
                 if self.get_state(f'input_boolean.{room_id}_{device_type}_auto') is None:
                     self.set_state(
@@ -246,28 +259,28 @@ class AirQuality(hass.Hass):
 
         return {  # Get Device Status
             'purifier': self.automations.get_matching_entities(
-                    area=room,
-                    domain='input_boolean',
-                    pattern=f'purifier_auto',
-                    agg_func='count',
-                    index='state'
-                ).get('off', 0) == 1
+                area=room,
+                domain='input_boolean',
+                pattern=f'purifier_auto',
+                agg_func='count',
+                index='state'
+            ).get('off', 0) == 1
             ,
             'humidifier': self.automations.get_matching_entities(
-                    area=room,
-                    domain='input_boolean',
-                    pattern=f'humidifier_auto',
-                    agg_func='count',
-                    index='state'
-                ).get('off', 0) == 1
+                area=room,
+                domain='input_boolean',
+                pattern=f'humidifier_auto',
+                agg_func='count',
+                index='state'
+            ).get('off', 0) == 1
             ,
             'oil_diffuser': self.automations.get_matching_entities(
-                    area=room,
-                    domain='input_boolean',
-                    pattern=f'oil_diffuser_auto',
-                    agg_func='count',
-                    index='state'
-                ).get('off', 0) == 1
+                area=room,
+                domain='input_boolean',
+                pattern=f'oil_diffuser_auto',
+                agg_func='count',
+                index='state'
+            ).get('off', 0) == 1
         }
 
     def get_master_overrides(self):
@@ -356,7 +369,8 @@ class AirQuality(hass.Hass):
                 current_humidity = self.automations.get_matching_entities(
                     area=room_id,
                     domain='sensor',
-                    pattern=self.args.get('regex_matching').get('devices').get('current_humidity','.*_current_humidity'),
+                    pattern=self.args.get('regex_matching').get('devices').get('current_humidity',
+                                                                               '.*_current_humidity'),
                     # agg_func='mean'
                 )
 
@@ -417,6 +431,8 @@ class AirQuality(hass.Hass):
             return
 
         last_reading = self.room_sensor_data[room].get(sensor_type)
+        new = new if new !='unavailable' else 0
+
         deviation = self.args.get('sensor_deviation', .30)
         if abs((new / last_reading) - 1) > deviation:
             self.log(
@@ -620,22 +636,7 @@ class AirQuality(hass.Hass):
 
         # If all conditions are True, run the automation
         if all(conditions.values()):
-            user_overrides = self.get_user_overrides(room)
-            master_overrides = self.get_master_overrides()
             priority_device = self.decide_device_activation(room)
-
-            if user_overrides[priority_device] or master_overrides[priority_device]:
-                self.log(
-                    f"""
-                        In master_air_quality_logic - {room}:
-                        {priority_device.title()} is disabled by user. Skipping Logic...
-                        
-                        Disabled by User: {user_overrides}
-                        Disabled by Master: {master_overrides}
-                    """,
-                    level='INFO',
-                )
-                return
 
             # Check mode and set device accordingly
             continue_with_automation = self.continue_logic[priority_device](room)
@@ -683,8 +684,8 @@ class AirQuality(hass.Hass):
 
                 final_commands = [
                     dict(
-                        hacs_commands='turn_off', 
-                        domain='humidifier', 
+                        hacs_commands='turn_off',
+                        domain='humidifier',
                         pattern=self.args.get('regex_matching').get('devices').get('humidifier', 'humidifier$'),
                         area=area
                     )
@@ -756,7 +757,7 @@ class AirQuality(hass.Hass):
                         domain='light',
                         pattern=pattern.strip('$'),
                         color_name='purple',
-                        brightness=100,
+                        brightness_pct=100,
                         area=area
                     )
 
@@ -923,6 +924,19 @@ class AirQuality(hass.Hass):
             get_attribute='timedelta',
             device_state=f'{last_priority_device}'
         )
+        self.log(f"""
+        Last Priority Device: {last_priority_device}
+        Last Priority Time: {last_priority_time}
+
+        time_check = (datetime.now() - last_priority_time) < timedelta(seconds=self.args.get('priority_time', 600))
+        time_check = ({datetime.now()} - {last_priority_time}) < timedelta(seconds={self.args.get('priority_time', 600)})
+        time_check = {time_check}
+
+        Compared to home assistant database:
+        {priority_device}
+
+        """)
+
         try:
             exceptions = {
                 'purifier': pm2_5 > 100,
@@ -991,6 +1005,23 @@ class AirQuality(hass.Hass):
             current_humidity=current_humidity,
             weighting='weighted'
         )
+
+        user_overrides = self.get_user_overrides(room)
+        master_overrides = self.get_master_overrides()
+
+        for priority in priorities:
+            if user_overrides[priority] or master_overrides[priority]:
+                self.log(
+                    f"""
+                        In decide_device_activation - {room}:
+                        {priority.title()} is disabled by user. Skipping Logic...
+    
+                        Disabled by User: {user_overrides}
+                        Disabled by Master: {master_overrides}
+                    """,
+                    level='INFO',
+                )
+                remove_priority.append(priority)
 
         # Remove the priority status for non-existent devices
         for priority in remove_priority:
@@ -1107,12 +1138,12 @@ class AirQuality(hass.Hass):
 
         room = kwargs.get('room')
         if self.priority_devices[room]['device'] != 'oil_diffuser':
-            self.diffuser_cycle_thread[room] = True
             return
 
-        # Don't turn back on if it is in its cool off period
-        if not self.diffuser_cycle_thread[room]:
-            self.log(f"{room.title()} Diffuser is in cool off period. Exiting...", level='INFO')
+        # Don't restart the cycle if the cycle is already running
+        # Make sure the diffuser is actually running
+        if self.diffuser_cycle_thread[room]:
+            self.log(f"{room.title()} Diffuser cycle is already running. Exiting...", level='INFO')
             return
 
         # Get current grade level
@@ -1127,14 +1158,21 @@ class AirQuality(hass.Hass):
             time_off = (10 - grade_level) * 60  # Off for (10 - grade_level) minutes
 
         # Turn on diffuser
+        self.diffuser_cycle_thread[room] = True  # Start the cycle
         self.run_in(self.diffuser_cycle_on, 0, room=room)
-        self.run_in(self.diffuser_cycle_off, time_on, room=room)
-        self.run_in(self.diffuser_cycle_logic, time_on + time_off, room=room)
+        self.run_in(self.diffuser_cycle_off, time_on, room=room)  # Ends cycle if not longer priority
+        self.run_in(self.diffuser_cycle_restart, time_on + time_off,
+                    room=room)  # Restarts cycle and checks for priority
+
+    def diffuser_cycle_restart(self, *args, **kwargs):
+        room = kwargs.get('room')
+        self.diffuser_cycle_thread[room] = False
+        self.run_in(self.diffuser_cycle_logic, 0, room=room)
 
     def diffuser_cycle_off(self, *args, **kwargs):
         room = kwargs.get('room')
         end_cycle = kwargs.get('end_cycle', False)
-        self.diffuser_cycle_thread[room] = False
+
         if self.args.get('use_regex_matching', True):
             response = self.automations.command_matching_entities(
                 hacs_commands='turn_off',
@@ -1161,13 +1199,15 @@ class AirQuality(hass.Hass):
 
         if self.args.get('use_regex_matching', True):
             pattern = self.args.get('regex_matching').get('devices').get('oil_diffuser', 'oil_diffuser$').strip('$')
-            if end_cycle:
+
+            if end_cycle or self.priority_devices[room]['device'] != 'oil_diffuser':
                 diffuser_light_entity = self.automations.command_matching_entities(
                     hacs_commands='turn_off',
                     area=room,
                     domain='light',
                     pattern=pattern,
                 )
+                self.diffuser_cycle_thread[room] = False  # Ending the cycle if diffuser is no longer priority
 
             else:
                 diffuser_light_entity = self.automations.command_matching_entities(
@@ -1176,13 +1216,13 @@ class AirQuality(hass.Hass):
                     domain='light',
                     pattern=pattern,
                     color_name='red',
-                    brightness=100
+                    brightness_pct=100
                 )
         self.log(f"\n{room} - Diffuser Cycle OFF:\n{response}\n{diffuser_light_entity}\n", level="INFO")
 
     def diffuser_cycle_on(self, *args, **kwargs):
         room = kwargs.get('room')
-        self.diffuser_cycle_thread[room] = True
+
         if self.priority_devices[room]['device'] != 'oil_diffuser':
             return
 
@@ -1223,8 +1263,9 @@ class AirQuality(hass.Hass):
                 domain='light',
                 pattern=self.args.get('regex_matching').get('devices').get('oil_diffuser', 'oil_diffuser$').strip('$'),
                 color_name='green',
-                brightness=100
+                brightness_pct=100
             )
+
         self.log(f"\n{room} - Diffuser Cycle ON:\n{response}\n{diffuser_light_entity}\n", level="INFO")
 
     def get_fan_percentage(self, pm2_5):
@@ -1351,21 +1392,21 @@ class AirQuality(hass.Hass):
         self.set_state(f"input_number.{room}_air_quality_oil_diffuser_score",
                        state=f"{time_score.get('oil_diffuser', 0):,.2f}")
 
-    def should_debounce(self, debounce_key):
+    def should_debounce(self, debounce_key, debounce_period=None):
         """Check if the call should be debounced."""
         current_time = datetime.now()
         last_run = self.debounce_timers.get(debounce_key)
+        debounce_period = debounce_period if debounce_period is not None else self.debounce_period
 
         if last_run is None:
             # If it's the first run, do not debounce
             self.debounce_timers[debounce_key] = current_time
             return False
 
-        if current_time - last_run < self.debounce_period:
+        if current_time - last_run < debounce_period:
             # If we're within the debounce period, skip this call
             return True
 
         # If we're outside the debounce period, proceed with the call
         self.debounce_timers[debounce_key] = current_time
         return False
-
