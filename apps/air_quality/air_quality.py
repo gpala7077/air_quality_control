@@ -924,17 +924,17 @@ class AirQuality(hass.Hass):
             get_attribute='timedelta',
             device_state=f'{last_priority_device}'
         )
+
         self.log(f"""
         Last Priority Device: {last_priority_device}
         Last Priority Time: {last_priority_time}
 
-        time_check = (datetime.now() - last_priority_time) < timedelta(seconds=self.args.get('priority_time', 600))
         time_check = ({datetime.now()} - {last_priority_time}) < timedelta(seconds={self.args.get('priority_time', 600)})
+        time_check = ({datetime.now() - last_priority_time: .2f}) < 600 seconds
         time_check = {time_check}
 
         Compared to home assistant database:
         {priority_device}
-
         """)
 
         try:

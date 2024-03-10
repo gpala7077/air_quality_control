@@ -14,7 +14,7 @@ Enter this URL: https://github.com/gpala7077/air_quality_control.git
 
 It will look like this:
   <div style="display: flex; justify-content: space-around;">
-  <div><img src="/apps/static/custom_repository.png" alt="Custom Repo" style="width: 50%; max-width: 500px;"/></div>
+  <div><img src="/static/custom_repository.png" alt="Custom Repo" style="width: 50%; max-width: 500px;"/></div>
   </div>
 
 
@@ -175,7 +175,6 @@ air_quality:
       occupancy: occupancy
 
 ```
-
 or if you are not using ReGex Matching, then you can specify the devices and sensors for each room.
 ```yaml
 air_quality:
@@ -206,3 +205,123 @@ air_quality:
           - binary_sensor.office_occupancy_general_1
           - binary_sensor.office_occupancy_snack
 ```
+
+
+# Air Quality Automation Documentation
+
+---
+
+## What the Automation Does
+
+The Air Quality Automation system intelligently manages indoor air quality using air purifiers, humidifiers, and
+diffusers. It's designed to automatically adjust these devices based on real-time air quality data, ensuring a healthy
+and comfortable environment.
+
+There are two main components to the Air Quality Automation system, first responds to room activity and environmental
+changes, and the second is a set of cron jobs that run on a schedule. The main automations are triggered when there is
+activity in the room and self-adjusts as the environment changes. The cron jobs are designed to run at specific
+times of the day to perform tasks such as circulating air, refreshing and deodorizing, and humidifying.
+
+### Room Activity Automation - Real-time Automation
+
+- Monitors air quality through a combination of sensors, including humidity and particulate matter
+- Utilizes a priority algorithm to assess and respond to air quality changes.
+- Adjusts air treatment devices as needed, based on specific air quality metrics.
+  - If humidity is too low, the humidifier will be turned on.
+  - If particulate matter is too high, the air purifier will be turned on.
+  - If the air quality and humidity is good, the diffuser will be turned on.
+  - If any devices conflict, the priority algorithm will determine which device to turn on.
+
+### Cron Jobs - Scheduled Automation
+
+- Circulating Air
+  - Turns on all purifiers and fans for 10 minutes every hour
+
+- Humidify
+  - Turns on the humidifier for 10 minutes every hour at the 15th minute
+
+- Refresh and Deodorize
+  - Turns on the diffusers for 10 minutes every hour at the 30th minute
+
+---
+
+## Deep Dive into the Air Quality Automation System
+
+### System Overview
+
+The Air Quality Automation system employs a multi-faceted approach to maintain and optimize indoor air quality. It
+integrates with various air treatment devices and analyzes sensor data and control device settings.
+
+### Main Components
+
+#### Data Collection and Analysis
+
+The system continuously monitors environmental parameters using sensors in the current room. It also collects data from
+the air treatment devices, including the current state and settings. This data is used to determine the current air
+quality and the optimal settings for the air treatment devices. The system prioritizes the air treatment devices based
+on the ratio between the current and optimal values and scored using an importance algorithm. The device with the
+highest importance score will be turned on.
+
+##### Example:
+
+Imagine a room with the following environmental conditions:
+
+- **Humidity**: 40% (indicating the air is quite dry)
+- **Particulate Matter**: 100 (showing a higher level of dust)
+- **Diffuser**: Currently off
+
+In this scenario, the air is not only dry but also contains a significant amount of dust. Operating both the humidifier
+and the air purifier simultaneously could lead to conflicts in their functions. For instance, while the air purifier is
+working to clean the air, it might inadvertently collect excessive moisture if the humidifier is on, potentially
+damaging its filter.
+
+So, which device should be activated under these conditions? Ideally, we aim for:
+
+1. **Humidity**: To be maintained within a comfortable range of 40% to 60%.
+2. **Particulate Matter**: To be reduced to a level below 50 for cleaner air.
+
+Given these targets, the system's scoring algorithm evaluates which device to prioritize. In this case, it would select
+the humidifier for activation first, addressing the immediate concern of low humidity. The humidifier would operate
+until the room's humidity reaches the upper end of the ideal range (60%), or until the dust level becomes the more
+pressing issue, necessitating a switch to the air purifier.
+
+Once the humidity and particulate matter levels are optimized, and with both within their ideal ranges, the system can
+then proceed to activate the diffuser. This sequence ensures that the room's air quality is managed efficiently without
+device conflicts, maintaining both comfort and device integrity.
+
+#### Scoring Algorithm
+
+The scoring algorithm looks at the **ratio between the current value and the optimal value** to determine the score. The
+score is then used to determine the priority of the device. The device with the highest priority will be turned on.
+For more detailed information on the scoring algorithm, see the
+[scoring algorithm documentation](https://github.com/gpala7077/regex_smart_home/tree/master?tab=readme-ov-file#scoring-algorithm)
+
+### Master Air Quality Logic
+
+The main function serves as the brain of the Air Quality Automation system. Its primary role is to orchestrate the
+behavior of various devices that influence air quality, such as air purifiers, humidifiers, and oil diffusers. This
+process is based on a comprehensive analysis of air quality metrics, user preferences, and environmental conditions in a
+specific room.
+
+#### Core Functionality
+
+- **Dynamic Response to Air Quality**: The function continuously monitors the air quality data and dynamically adjusts
+  the operation of the devices to maintain optimal air conditions.
+- **Intelligent Decision-Making**: It employs an algorithm to prioritize which device should be active at
+  any given time, ensuring efficiency and effectiveness in air quality management.
+- **User Preferences and Automation Settings**: The logic takes into account user-defined settings, allowing for a
+  tailored experience. Whether it's based on automated schedules or manual overrides, the function respects these
+  preferences while making decisions.
+- **Holistic Room Analysis**: It doesn't just focus on a single device or sensor. Instead, the function considers the
+  collective status of all devices and sensors in a room, ensuring a holistic approach to managing air quality.
+
+#### Impact and Benefits
+
+- **Enhanced Indoor Comfort**: By accurately adjusting air quality devices, the function ensures a comfortable indoor
+  environment that is responsive to both the needs of the occupants and the changing environmental conditions.
+- **Energy Efficiency**: Smart management of devices leads to optimized energy usage, as devices are only active when
+  necessary and operate at appropriate levels.
+- **User Convenience**: The automation minimizes the need for manual intervention, providing a convenient and worry-free
+  experience for the users.
+
+---
