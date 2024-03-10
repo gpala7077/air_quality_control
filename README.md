@@ -37,6 +37,9 @@ air_quality:
     - automations
 
   # Air Quality Automation
+  # REQUIRED:
+  timezone: America/Chicago # Your timezone
+  
   # OPTIONAL: This can be commented out or removed entirely
   priority_time: 600 # 600 is the default value (seconds)
   inactivity_time: 600 # 600 is the default value (seconds)
@@ -161,6 +164,9 @@ air_quality:
     - HASS
   priority: 2
   use_dictionary_unpacking: True
+  
+  # REQUIRED:
+  timezone: America/Chicago # Your timezone
 
   use_regex_matching: True # True is the default value
   regex_matching:
@@ -184,6 +190,9 @@ air_quality:
     - HASS
   priority: 2
   use_dictionary_unpacking: False
+  
+  # REQUIRED:
+  timezone: America/Chicago # Your timezone
 
   rooms:
     living_room:
