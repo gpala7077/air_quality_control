@@ -49,20 +49,23 @@ air_quality:
   # Cron Jobs Schedule
   cron_job_schedule:
     air_circulation:
-      interval: 7200 # 7200 is the default value (seconds)
-      hour: 0
+      interval: 7200 # 7200 is the default value (seconds) 
+      # Every 2 hours on the hour
+#      hour: 0
       minute: 0
-      second: 0
+#      second: 0
     humidify:
+      # Every hour at 15 minutes
       interval: 3600 # 3600 is the default value (seconds)
-      hour: 0
+#      hour: 0
       minute: 15
-      second: 0
+#      second: 0
     deodorize_and_refresh:
+      # Every hour at 30 minutes
       interval: 3600 # 3600 is the default value (seconds)
-      hour: 0
+#      hour: 0
       minute: 30
-      second: 0
+#      second: 0
   
   # Auto match your entities and rooms
   use_regex_matching: True # True is the default value

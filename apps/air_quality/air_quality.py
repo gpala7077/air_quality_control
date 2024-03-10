@@ -1280,8 +1280,8 @@ class AirQuality(hass.Hass):
         }
 
         custom_sleep_mode = {
-            'sleep': 'sleep' in self.args.get('modes', False),
-            'work': 'work' in self.args.get('modes', False),
+            'sleep': self.args.get('modes', {}).get('sleep', {}),
+            'work': self.args.get('modes', {}).get('work', {}),
         }
         penalties = global_penalties.update(penalties) if penalties else global_penalties
         if any(custom_sleep_mode.values()):
