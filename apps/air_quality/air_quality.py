@@ -399,6 +399,7 @@ class AirQuality(hass.Hass):
                     self.listen_state(
                         self.turn_off_air_quality_devices,
                         binary_sensor,
+                        old='new',
                         new='off',
                         room=room_id,
                         include_priority=True,
@@ -726,7 +727,7 @@ class AirQuality(hass.Hass):
             self.turn_off_air_quality_devices(room=area, include_priority=False)
             self.automations.master_automation_logic(
                 app_name='air_quality',
-                task_id='humidify',
+                task_id=f'humidify_{area}',
                 master_name='humidify',
                 boolean_checks=automation_boolean_checks,
                 commands=commands,
@@ -742,6 +743,11 @@ class AirQuality(hass.Hass):
 
         current_time = datetime.now()
         rooms = self.automations.areas if self.args.get('use_regex_matching', True) else self.args.get('rooms')
+        # All boolean must be true in order to run Air Circulation Automation
+        automation_boolean_checks = {
+            'has_master_auto_on': self.get_state("input_boolean.automatic_deodorize_and_refresh") == 'on',
+        }
+
         for area in rooms:
             self.priority_devices[area] = {'device': 'oil_diffuser', 'time': current_time}
             if self.args.get('use_regex_matching', True):
@@ -799,14 +805,10 @@ class AirQuality(hass.Hass):
                         area=area
                     )
                 ]
-            # All boolean must be true in order to run Air Circulation Automation
-            automation_boolean_checks = {
-                'has_master_auto_on': self.get_state("input_boolean.automatic_deodorize_and_refresh") == 'on',
-            }
             self.turn_off_air_quality_devices(room=area, include_priority=False)
             self.automations.master_automation_logic(
                 app_name='air_quality',
-                task_id='deodorize_and_refresh',
+                task_id=f'deodorize_and_refresh_{area}',
                 master_name='deodorize_and_refresh',
                 boolean_checks=automation_boolean_checks,
                 commands=commands,
@@ -895,7 +897,7 @@ class AirQuality(hass.Hass):
             self.turn_off_air_quality_devices(room=area, include_priority=False)
             self.automations.master_automation_logic(
                 app_name='air_quality',
-                task_id='air_circulation',
+                task_id=f'air_circulation_{area}',
                 master_name='air_circulation',
                 boolean_checks=automation_boolean_checks,
                 commands=commands,
