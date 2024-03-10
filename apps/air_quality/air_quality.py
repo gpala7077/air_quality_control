@@ -1,6 +1,7 @@
 import appdaemon.plugins.hass.hassapi as hass
 from datetime import datetime, timedelta, time
 import numpy as np
+import pytz
 
 
 class AirQuality(hass.Hass):
@@ -41,12 +42,14 @@ class AirQuality(hass.Hass):
     def create_cron_jobs(self):
         """Create cron jobs."""
 
+        timezone = pytz.timezone(self.args.get('timezone', 'America/Chicago'))
+
         cron_jobs = {
             'Air Circulation': dict(
                 run_on_reload=False,  # Don't run the automation immediately
                 minutes=10,  # Amount of time to run the automation. Specific to circulate_air_logic
                 cron_pattern=time(
-                    self.args.get('cron_job_schedule', {}).get('air_circulation', {}).get('hour', 0),
+                    self.args.get('cron_job_schedule', {}).get('air_circulation', {}).get('hour', datetime.now(timezone).hour),
                     self.args.get('cron_job_schedule', {}).get('air_circulation', {}).get('minute', 0),
                     self.args.get('cron_job_schedule', {}).get('air_circulation', {}).get('second', 0)
                 ),  # Every 2 hours on the hour
@@ -59,7 +62,7 @@ class AirQuality(hass.Hass):
                 run_on_reload=False,  # Don't run the automation immediately
                 minutes=5,  # Amount of time to run the automation. Specific to humidifier_logic
                 cron_pattern=time(
-                    self.args.get('cron_job_schedule', {}).get('humidify', {}).get('hour', 0),
+                    self.args.get('cron_job_schedule', {}).get('humidify', {}).get('hour', datetime.now(timezone).hour),
                     self.args.get('cron_job_schedule', {}).get('humidify', {}).get('minute', 15),
                     self.args.get('cron_job_schedule', {}).get('humidify', {}).get('second', 0)
                 ),  # Every 2 hours on the hour
@@ -72,7 +75,7 @@ class AirQuality(hass.Hass):
                 run_on_reload=False,  # Don't run the automation immediately
                 minutes=2,  # Amount of time to run the automation. Specific to deodorize_and_refresh_logic
                 cron_pattern=time(
-                    self.args.get('cron_job_schedule', {}).get('deodorize_and_refresh', {}).get('hour', 0),
+                    self.args.get('cron_job_schedule', {}).get('deodorize_and_refresh', {}).get('hour', datetime.now(timezone).hour),
                     self.args.get('cron_job_schedule', {}).get('deodorize_and_refresh', {}).get('minute', 30),
                     self.args.get('cron_job_schedule', {}).get('deodorize_and_refresh', {}).get('second', 0)
                 ),  # Every 2 hours on the hour
@@ -84,7 +87,7 @@ class AirQuality(hass.Hass):
 
         for job, config in cron_jobs.items():
             cron_pattern = config.pop('cron_pattern')
-            cron_pattern = datetime.combine(datetime.now().date(), cron_pattern)
+            cron_pattern = datetime.combine(datetime.now(timezone).date(), cron_pattern)
             run_on_reload = config.pop('run_on_reload')
             cron_func = config.pop('cron_func')
             cron_window = config.pop('cron_interval', None)
@@ -97,6 +100,7 @@ class AirQuality(hass.Hass):
                 self.run_hourly(config['logic_func'], start=cron_pattern, minutes=minutes)
 
             elif cron_func == 'run_every':
+                self.log(f"Running {job} at {cron_pattern} every {cron_window} seconds", level='INFO')
                 self.run_every(config['logic_func'], start=cron_pattern, interval=cron_window, minutes=minutes)
 
     def create_automation_entities(self):
@@ -924,18 +928,6 @@ class AirQuality(hass.Hass):
             get_attribute='timedelta',
             device_state=f'{last_priority_device}'
         )
-
-        self.log(f"""
-        Last Priority Device: {last_priority_device}
-        Last Priority Time: {last_priority_time}
-
-        time_check = ({datetime.now()} - {last_priority_time}) < timedelta(seconds={self.args.get('priority_time', 600)})
-        time_check = ({datetime.now() - last_priority_time: .2f}) < 600 seconds
-        time_check = {time_check}
-
-        Compared to home assistant database:
-        {priority_device}
-        """)
 
         try:
             exceptions = {
