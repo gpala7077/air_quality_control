@@ -1,15 +1,26 @@
 import appdaemon.plugins.hass.hassapi as hass
 from datetime import datetime, timedelta, time
 import numpy as np
+import pandas as pd
 import pytz
+from utility import Base
 
 
-class AirQuality(hass.Hass):
+class AirQuality(Base):
     """AirQuality class."""
 
     def initialize(self):
         """Initialize the HACS app."""
-        self.log("Air Quality Priority System is initializing")
+        super().initialize()    # Initialize the Base class
+
+        self.log_info(
+            app='air_quality',
+            message="Air Quality Priority System is initializing",
+            level='INFO',
+            log_room='all',
+            function='initialize'
+        )
+
         self.automations = self.get_app('automations')
         self.turn_off_logic = {
             'purifier': self.turn_off_purifier,
@@ -26,6 +37,12 @@ class AirQuality(hass.Hass):
             'humidifier': self.set_humidifier_mode,
             'oil_diffuser': self.set_diffuser_mode
         }
+        self.cron_job_funcs = {
+            'air_circulation': self.circulate_air_logic,
+            'humidify': self.humidify_logic,
+            'deodorize_and_refresh': self.deodorize_and_refresh_logic,
+        }
+#
         self.room_sensor_data = {}
         self.diffuser_cycle_thread = {}
         self.master_air_quality_thread = {}
@@ -37,71 +54,14 @@ class AirQuality(hass.Hass):
         self.create_automation_entities()
         self.create_room_based_automations()
         self.create_cron_jobs()
-        self.log("Air Quality Priority System is initialized")
 
-    def create_cron_jobs(self):
-        """Create cron jobs."""
-
-        timezone = pytz.timezone(self.args.get('timezone', 'America/Chicago'))
-
-        cron_jobs = {
-            'Air Circulation': dict(
-                run_on_reload=False,  # Don't run the automation immediately
-                minutes=10,  # Amount of time to run the automation. Specific to circulate_air_logic
-                cron_pattern=time(
-                    self.args.get('cron_job_schedule', {}).get('air_circulation', {}).get('hour', datetime.now(timezone).hour),
-                    self.args.get('cron_job_schedule', {}).get('air_circulation', {}).get('minute', 0),
-                    self.args.get('cron_job_schedule', {}).get('air_circulation', {}).get('second', 0)
-                ),  # Every 2 hours on the hour
-                cron_func='run_every',
-                cron_interval=self.args.get('cron_job_schedule').get('air_circulation').get('interval', 60 * 60 * 2),
-                logic_func=self.circulate_air_logic,
-            ),
-
-            'Humidify': dict(
-                run_on_reload=False,  # Don't run the automation immediately
-                minutes=5,  # Amount of time to run the automation. Specific to humidifier_logic
-                cron_pattern=time(
-                    self.args.get('cron_job_schedule', {}).get('humidify', {}).get('hour', datetime.now(timezone).hour),
-                    self.args.get('cron_job_schedule', {}).get('humidify', {}).get('minute', 15),
-                    self.args.get('cron_job_schedule', {}).get('humidify', {}).get('second', 0)
-                ),  # Every 2 hours on the hour
-                cron_func='run_every',
-                cron_interval=self.args.get('cron_job_schedule', {}).get('humidify', {}).get('interval', 60 * 60),
-                logic_func=self.humidify_logic,
-            ),
-
-            'Deodorize and Refresh': dict(
-                run_on_reload=False,  # Don't run the automation immediately
-                minutes=2,  # Amount of time to run the automation. Specific to deodorize_and_refresh_logic
-                cron_pattern=time(
-                    self.args.get('cron_job_schedule', {}).get('deodorize_and_refresh', {}).get('hour', datetime.now(timezone).hour),
-                    self.args.get('cron_job_schedule', {}).get('deodorize_and_refresh', {}).get('minute', 30),
-                    self.args.get('cron_job_schedule', {}).get('deodorize_and_refresh', {}).get('second', 0)
-                ),  # Every 2 hours on the hour
-                cron_func='run_every',
-                cron_interval=self.args.get('cron_job_schedule').get('deodorize_and_refresh').get('interval', 60 * 60),
-                logic_func=self.deodorize_and_refresh_logic,
-            )
-        }
-
-        for job, config in cron_jobs.items():
-            cron_pattern = config.pop('cron_pattern')
-            cron_pattern = datetime.combine(datetime.now(timezone).date(), cron_pattern)
-            run_on_reload = config.pop('run_on_reload')
-            cron_func = config.pop('cron_func')
-            cron_window = config.pop('cron_interval', None)
-            minutes = config.pop('minutes', 0)
-
-            if run_on_reload:
-                config['logic_func']()
-
-            if cron_func == 'run_hourly':
-                self.run_hourly(config['logic_func'], start=cron_pattern, minutes=minutes)
-
-            elif cron_func == 'run_every':
-                self.log(f"Running {job} at {cron_pattern} every {cron_window} seconds", level='INFO')
-                self.run_every(config['logic_func'], start=cron_pattern, interval=cron_window, minutes=minutes)
+        self.log_info(
+            app='air_quality',
+            message="Air Quality Priority System is initialized",
+            level='INFO',
+            log_room='all',
+            function='initialize'
+        )
 
     def create_automation_entities(self):
         """Create the automation entities."""
@@ -314,7 +274,7 @@ class AirQuality(hass.Hass):
                 else:
                     occupancy.update({self.get_state(entity): 1})
 
-        return occupancy.get('on', 0) > 0
+        return occupancy.get('on', 0) >= 1
 
     def get_sensor_data(self, room):
 
@@ -427,7 +387,9 @@ class AirQuality(hass.Hass):
         room = kwargs.get('room')
         sensor_type = kwargs.get('sensor_type')
         debounce_key = f'{room}_{sensor_type}_sensor_changes'
-        new = float(args[3])
+        # Get New state if available else old state
+        new = args[3] if args[3] !='unavailable' else args[4]
+        new = float(new)
         if self.should_debounce(debounce_key):
             return
 
@@ -436,17 +398,20 @@ class AirQuality(hass.Hass):
             return
 
         last_reading = self.room_sensor_data[room].get(sensor_type)
-        new = new if new !='unavailable' else 0
+        new = new if new != 'unavailable' else 0
 
         deviation = self.args.get('sensor_deviation', .30)
         if abs((new / last_reading) - 1) > deviation:
-            self.log(
-                f"""
+            self.log_info(
+                app='air_quality',
+                message=f"""
                 In check_sensor_changes - {room}:
                 {sensor_type} has changed by more than {deviation: .2%}.
                 Last Reading: {last_reading}
                 Current Reading: {new}
                 """,
+                function='check_sensor_changes',
+                log_room=room,
                 level='INFO'
             )
             self.get_sensor_data(room)  # Update sensor data
@@ -526,7 +491,13 @@ class AirQuality(hass.Hass):
             return False
 
         if self.is_room_occupied(room) and check_for_occupancy:
-            self.log(f"{room.title()} is still in use. Exiting...", level='INFO')
+            self.log_info(
+                app='air_quality',
+                message=f"{room.title()} is still in use. Exiting...",
+                level='INFO',
+                log_room=room,
+                function='execute_turn_off_command'
+            )
             return False
 
         return True
@@ -561,12 +532,16 @@ class AirQuality(hass.Hass):
 
         if response:
             # Set fan percentage
-            self.log(
-                msg=f"""
+            self.log_info(
+                app='air_quality',
+                message=f"""
                     In air_quality_logic - {room}:
                     Setting fan percentage to {fan_percentage}%
+                    {response}
                     """,
                 level='INFO',
+                log_room=room,
+                function='turn_on_purifier'
             )
 
     def turn_on_humidifier(self, room, **kwargs):
@@ -602,23 +577,60 @@ class AirQuality(hass.Hass):
                     device_state=['off', 'unavailable']
                 )
             if response:
-                self.log(
-                    f"""
+                self.log_info(
+                    app='air_quality',
+                    message=f"""
                         In humidifier_logic - {room}:
                         Turning on humidifier.
                         {response}
                     """,
                     level='INFO',
+                    log_room=room,
+                    function='turn_on_humidifier'
                 )
+                # For the next 5 seconds, check if the humidifier was turned off.  If it was, it is most likely empty.
+                # Inform user
+                entities = response['humidifier'].get('entities')[0]
+                self.automations.begin_snapshot(
+                    entity_id=entities,
+                    old='off',
+                    new='on',
+                    recording_key='humidifier_empty',
+                    regex_filter=f"{entities}",
+                    duration=5,
+                    oneshot=True,
+                    sql=False,
+                )
+                self.run_in(self.humidifier_empty_callback, 10)
+
 
             else:
-                self.log(
-                    f"""
+                self.log_info(
+                    app='air_quality',
+                    message=f"""
                         In humidifier_logic - {room}:
                         Humidifier is already on.
                     """,
                     level='INFO',
+                    log_room=room,
+                    function='turn_on_humidifier'
                 )
+
+    def humidifier_empty_callback(self, *args, **kwargs):
+        data = self.automations.recordings.get('humidifier_empty')
+        if data is not None and data.query('new=="off"').shape[0] > 0:
+            entity = data['entity'].iloc[0]
+
+            self.log_info(
+                app='air_quality',
+                message=f"""
+                    In humidifier_empty_callback - {entity}:
+                    Humidifier is empty. Informing User.
+                """,
+                level='INFO',
+                log_room='all',
+                function='humidifier_empty_callback'
+            )
 
     def turn_on_diffuser(self, room, **kwargs):
         self.run_in(
@@ -636,7 +648,7 @@ class AirQuality(hass.Hass):
 
         # All these conditions must be True for automatic air quality device to run
         conditions = {
-            'master_automations_off': all([not is_running for job, is_running in self.cron_jobs[room].items()]),
+            'master_automations_off': not any(self.master_air_quality_thread.values()),
         }
 
         # If all conditions are True, run the automation
@@ -666,6 +678,10 @@ class AirQuality(hass.Hass):
         debounce_key = f'air_quality_humidify'
         if self.should_debounce(debounce_key):
             return
+
+        master_key = 'humidify'
+        self.master_air_quality_thread[master_key] = True
+
         rooms = self.automations.areas if self.args.get('use_regex_matching', True) else self.args.get('rooms')
 
         for area in rooms:
@@ -736,10 +752,14 @@ class AirQuality(hass.Hass):
                 **kwargs
             )
 
+            self.run_in(self.end_master_air_quality_thread, 15 * 60, master_key=master_key)
+
     def deodorize_and_refresh_logic(self, *args, **kwargs):
         debounce_key = f'air_quality_deodorize_and_refresh'
         if self.should_debounce(debounce_key):
             return
+        master_key = 'deodorize_and_refresh'
+        self.master_air_quality_thread[master_key] = True
 
         current_time = datetime.now()
         rooms = self.automations.areas if self.args.get('use_regex_matching', True) else self.args.get('rooms')
@@ -777,8 +797,15 @@ class AirQuality(hass.Hass):
                     dict(
                         hacs_commands='turn_off',
                         domain='humidifier',
-                        pattern=self.args.get('regex_matching').get('devices').get('oil_diffuser', 'oil_diffuser$'),
-                        area=area)
+                        pattern=pattern,
+                        area=area
+                    ),
+                    dict(
+                        hacs_commands='turn_off',
+                        domain='light',
+                        pattern=pattern.strip('$'),
+                        area=area
+                    )
                 ]
 
             else:
@@ -816,11 +843,16 @@ class AirQuality(hass.Hass):
                 default_wait=15 * 60,
                 **kwargs
             )
+        self.run_in(self.end_master_air_quality_thread, 15 * 60, master_key=master_key)
 
     def circulate_air_logic(self, *args, **kwargs):
         debounce_key = f'air_quality_circulate_air'
+        master_key = 'circulate_air'
         if self.should_debounce(debounce_key):
             return
+
+        self.master_air_quality_thread[master_key] = True
+
         # Any boolean must be true to run Air Circulation quietly
         sleep_mode_boolean_checks = self.check_air_quality_mode_penalties('purifier')
         rooms = self.automations.areas if self.args.get('use_regex_matching', True) else self.args.get('rooms')
@@ -831,7 +863,7 @@ class AirQuality(hass.Hass):
                     dict(
                         hacs_commands='turn_on',
                         domain='fan',
-                        pattern=['.*_fan$', 'purifier$'],
+                        pattern=['fan$', 'purifier$'],
                         area=area
                     ),
                     dict(
@@ -905,6 +937,11 @@ class AirQuality(hass.Hass):
                 default_wait=15 * 60,
                 **kwargs
             )
+        self.run_in(self.end_master_air_quality_thread, 15 * 60, master_key=master_key)
+
+    def end_master_air_quality_thread(self, *args, **kwargs):
+        master_key = kwargs.get('master_key')
+        self.master_air_quality_thread[master_key] = False
 
     def decide_device_activation(self, room):
         # Get Room Status
@@ -937,26 +974,32 @@ class AirQuality(hass.Hass):
                 'humidifier': current_humidity < 25 or current_humidity > 75,
             }
         except Exception as e:
-            self.log(
-                f"""
+            self.log_info(
+                app='air_quality',
+                message=f"""
                     In decide_device_activation - {room}:
                     Error: {e}
                     PM2.5: {pm2_5}
                     Humidity: {current_humidity}
                 """,
                 level='INFO',
+                log_room=room,
+                function='decide_device_activation'
             )
 
         if time_check:
             if pm2_5 < 100 and 45 <= current_humidity <= 60:
-                self.log(
-                    f"""
+                self.log_info(
+                    app='air_quality',
+                    message=f"""
                         In decide_device_activation - {room}:
                         Priority Device {last_priority_device} has been on for less than 10 minutes. Not resetting 
                         priority.
                         {pm2_5:.1f} ug/m3, Humidity: {current_humidity:.1f}%
                     """,
                     level='INFO',
+                    log_room=room,
+                    function='decide_device_activation'
                 )
 
                 return last_priority_device
@@ -968,8 +1011,9 @@ class AirQuality(hass.Hass):
                         return last_priority_device
 
                     if exception != last_priority_device and condition:
-                        self.log(
-                            f"""
+                        self.log_info(
+                            app='air_quality',
+                            message=f"""
                                 In decide_device_activation - {room}:
                                 PM2.5: {pm2_5:.1f} ug/m3, Humidity: {current_humidity:.1f}%
                                 Priority Device {last_priority_device} has been on for less than 10 minutes. But pm2.5 
@@ -978,18 +1022,23 @@ class AirQuality(hass.Hass):
                                 Changing priority to from {last_priority_device} to {exception}
                             """,
                             level='INFO',
+                            log_room=room,
+                            function='decide_device_activation'
                         )
                         return exception
                 return last_priority_device
 
         else:
-            self.log(
-                f"""
+            self.log_info(
+                app='air_quality',
+                message=f"""
                     In decide_device_activation - {room}:
                     Priority Device {last_priority_device} has been on for more than 10 minutes. Resetting priority.
                     {priority_device}
                 """,
                 level='INFO',
+                log_room=room,
+                function='decide_device_activation'
             )
 
         # Calculate dynamic priorities
@@ -1005,8 +1054,9 @@ class AirQuality(hass.Hass):
 
         for priority in priorities:
             if user_overrides[priority] or master_overrides[priority]:
-                self.log(
-                    f"""
+                self.log_info(
+                    app='air_quality',
+                    message=f"""
                         In decide_device_activation - {room}:
                         {priority.title()} is disabled by user. Skipping Logic...
     
@@ -1014,6 +1064,8 @@ class AirQuality(hass.Hass):
                         Disabled by Master: {master_overrides}
                     """,
                     level='INFO',
+                    function='decide_device_activation',
+                    log_room=room
                 )
                 remove_priority.append(priority)
 
@@ -1033,20 +1085,29 @@ class AirQuality(hass.Hass):
                 priorities,
                 priorities[highest_priority_device]
             )
-            self.log(f"Returning highest priority device: {highest_priority_device}")
+            self.log_info(
+                app='air_quality',
+                message=f"Returning highest priority device: {highest_priority_device}",
+                level='INFO',
+                log_room=room,
+                function='decide_device_activation'
+            )
 
             if last_priority_device != highest_priority_device:
                 self.priority_devices[room] = {'device': highest_priority_device, 'time': datetime.now()}
 
             return highest_priority_device
 
-        self.log(
-            f"""
+        self.log_info(
+            app='air_quality',
+            message=f"""
                 In decide_device_activation - {room}:
                 NOTHING TO ACTIVATE
                 Priorities: {priorities} 
             """,
             level='DEBUG',
+            log_room=room,
+            function='decide_device_activation'
         )
 
         return None
@@ -1105,8 +1166,9 @@ class AirQuality(hass.Hass):
             priorities['humidifier'] *= .40
             priorities['humidifier'] += humidity_score * .60
 
-        self.log(
-            f"""
+        self.log_info(
+            app='air_quality',
+            message=f"""
                 Dynamic Priority Scores for {room.title()}:
                 PM2.5: {pm2_5:.1f} ug/m3, Humidity: {current_humidity:.1f}%
                     Sensor Scores:
@@ -1124,6 +1186,8 @@ class AirQuality(hass.Hass):
                         Diffuser: {priorities['oil_diffuser']:.2f}\n
                     """,
             level='DEBUG',
+            log_room=room,
+            function='calculate_dynamic_priority'
         )
 
         return priorities
@@ -1137,7 +1201,13 @@ class AirQuality(hass.Hass):
         # Don't restart the cycle if the cycle is already running
         # Make sure the diffuser is actually running
         if self.diffuser_cycle_thread[room]:
-            self.log(f"{room.title()} Diffuser cycle is already running. Exiting...", level='INFO')
+            self.log_info(
+                app='air_quality',
+                message=f"{room.title()} Diffuser cycle is already running. Exiting...",
+                level='INFO',
+                log_room=room,
+                function='diffuser_cycle_logic'
+            )
             return
 
         # Get current grade level
@@ -1212,7 +1282,13 @@ class AirQuality(hass.Hass):
                     color_name='red',
                     brightness_pct=100
                 )
-        self.log(f"\n{room} - Diffuser Cycle OFF:\n{response}\n{diffuser_light_entity}\n", level="INFO")
+        self.log_info(
+            app='air_quality',
+            message=f"\n{room} - Diffuser Cycle OFF:\n{response}\n{diffuser_light_entity}\n",
+            level="INFO",
+            log_room=room,
+            function='diffuser_cycle_off'
+        )
 
     def diffuser_cycle_on(self, *args, **kwargs):
         room = kwargs.get('room')
@@ -1260,7 +1336,13 @@ class AirQuality(hass.Hass):
                 brightness_pct=100
             )
 
-        self.log(f"\n{room} - Diffuser Cycle ON:\n{response}\n{diffuser_light_entity}\n", level="INFO")
+        self.log_info(
+            app='air_quality',
+            message=f"\n{room} - Diffuser Cycle ON:\n{response}\n{diffuser_light_entity}\n",
+            level="INFO",
+            log_room=room,
+            function='diffuser_cycle_on'
+        )
 
     def get_fan_percentage(self, pm2_5):
         # Get thresholds and percentages from input_number entities.  These are set in the UI.
@@ -1309,12 +1391,15 @@ class AirQuality(hass.Hass):
         fan_penalties = self.check_air_quality_mode_penalties('purifier')
 
         if any(fan_penalties.values()):
-            self.log(
-                msg=f"""
+            self.log_info(
+                app='air_quality',
+                message=f"""
                     In set_purifier_mode - {room}:
                     Setting Sleep Mode purifier
                     """,
                 level='INFO',
+                log_room=room,
+                function = 'set_purifier_mode'
             )
             self.call_service("fan/set_preset_mode", entity_id=list(purifier_entity.keys()), preset_mode='sleep')
             return
@@ -1328,22 +1413,28 @@ class AirQuality(hass.Hass):
         humidifier_penalties = self.check_air_quality_mode_penalties('humidifier')
 
         if any(humidifier_penalties.values()) and room != 'bedroom':
-            self.log(
-                f"""
+            self.log_info(
+                app='air_quality',
+                message=f"""
                     In set_humidifier_mode - {room}:
                     Setting Sleep Mode for the Humidifier
                     """,
                 level='INFO',
+                log_room=room,
+                function='set_humidifier_mode'
             )
             self.call_service("humidifier/set_mode", entity_id=list(humidifier_entities.keys()), mode='sleep')
             return
         elif any(humidifier_penalties.values()) and room == 'bedroom':
-            self.log(
-                msg=f"""
+            self.log_info(
+                app='air_quality',
+                message=f"""
                     In set_humidifier_mode - {room}:
                     Setting Baby Mode for the Humidifier
                     """,
                 level='INFO',
+                log_room=room,
+                function='set_humidifier_mode'
             )
             self.call_service("humidifier/set_mode", entity_id=list(humidifier_entities.keys()), mode='baby')
             return
@@ -1357,14 +1448,17 @@ class AirQuality(hass.Hass):
 
     def update_air_quality_entities_for_room(self, room, priority_device, pm2_5, humidity, time_score, weight_score):
         """Update the Air Quality entities in Home Assistant for a specific room."""
-        self.log(
-            f"""
+        self.log_info(
+            app='air_quality',
+            message=f"""
                     Entering update_air_quality_entities_for_room - {room}
                     The priority device is {priority_device}
                     The PM2.5 is {pm2_5}
                     The Humidity is {humidity}
             """,
             level='DEBUG',
+            log_room=room,
+            function='update_air_quality_entities_for_room'
         )
 
         # Rounding priority device scores to two decimals and converting to percentage as a string
@@ -1385,22 +1479,3 @@ class AirQuality(hass.Hass):
                        state=f"{time_score.get('humidifier', 0):,.2f}")
         self.set_state(f"input_number.{room}_air_quality_oil_diffuser_score",
                        state=f"{time_score.get('oil_diffuser', 0):,.2f}")
-
-    def should_debounce(self, debounce_key, debounce_period=None):
-        """Check if the call should be debounced."""
-        current_time = datetime.now()
-        last_run = self.debounce_timers.get(debounce_key)
-        debounce_period = debounce_period if debounce_period is not None else self.debounce_period
-
-        if last_run is None:
-            # If it's the first run, do not debounce
-            self.debounce_timers[debounce_key] = current_time
-            return False
-
-        if current_time - last_run < debounce_period:
-            # If we're within the debounce period, skip this call
-            return True
-
-        # If we're outside the debounce period, proceed with the call
-        self.debounce_timers[debounce_key] = current_time
-        return False
