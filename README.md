@@ -24,6 +24,10 @@ This is an example configuration file with all the available settings.
 Add the following to your `air_quality.yaml` file.
 
 ```yaml
+automations:
+  module: utility
+  class: true
+
 air_quality:
   module: air_quality
   class: AirQuality
@@ -36,38 +40,34 @@ air_quality:
   dependencies:
     - automations
 
-  # Air Quality Automation
-  # REQUIRED:
-  timezone: America/Chicago # Your timezone
-  
-  # OPTIONAL: This can be commented out or removed entirely
+  timezone: America/Chicago
   priority_time: 600 # 600 is the default value (seconds)
   inactivity_time: 600 # 600 is the default value (seconds)
   occupied_rooms_only: True # True is the default value
   sensor_deviation: .30 # 0.30 is the default value
 
-  # Cron Jobs Schedule
   cron_job_schedule:
     air_circulation:
-      interval: 7200 # 7200 is the default value (seconds) 
-      # Every 2 hours on the hour
-#      hour: 0
-      minute: 0
-#      second: 0
+        interval: 7200 # 3600 is the default value (seconds)
+        function: run_every
+        time_pattern: 00:00:00
+        run_immediately: False
+        minutes: 10
+
     humidify:
-      # Every hour at 15 minutes
-      interval: 3600 # 3600 is the default value (seconds)
-#      hour: 0
-      minute: 15
-#      second: 0
+        interval: 3600 # 3600 is the default value (seconds)
+        function: run_every
+        time_pattern: 00:15:00
+        run_immediately: False
+        minutes: 10
+
     deodorize_and_refresh:
-      # Every hour at 30 minutes
-      interval: 3600 # 3600 is the default value (seconds)
-#      hour: 0
-      minute: 30
-#      second: 0
-  
-  # Auto match your entities and rooms
+        interval: 3600 # 3600 is the default value (seconds)
+        function: run_every
+        time_pattern: 00:30:00
+        run_immediately: False
+        minutes: 10
+
   use_regex_matching: True # True is the default value
   regex_matching:
     devices:
@@ -76,7 +76,7 @@ air_quality:
       oil_diffuser: oil_diffuser$
 
     sensors:
-      current_humidity: .*_current_humidity
+      humidity: .*_current_humidity
       pm2_5: .*_pm2_5
       occupancy: occupancy
 
@@ -92,7 +92,7 @@ air_quality:
         oil_diffuser:
           - humidifier.office_oil_diffuser
       sensors:
-        current_humidity:
+        humidity:
           - sensor.office_humidifier_current_humidity
           - sensor.office_oil_diffuser_current_humidity
         pm2_5:
@@ -100,9 +100,8 @@ air_quality:
         occupancy:
           - binary_sensor.office_occupancy_general_1
           - binary_sensor.office_occupancy_snack
-  
+
   # Enter entity id and the value that corresponds to 'sleep' or 'work' mode
-  # OPTIONAL: This can be commented out or removed entirely
   modes:
     sleep:
       - entity_id: input_text.iphone_eva_focus
@@ -134,6 +133,11 @@ air_quality:
         value:
           - Work
           - Commute
+
+  logging:
+    room: office
+    level: INFO
+    function: all
 ```
 
 
@@ -179,7 +183,7 @@ air_quality:
       oil_diffuser: oil_diffuser$
 
     sensors:
-      current_humidity: .*_current_humidity
+      humidity: .*_current_humidity
       pm2_5: .*_pm2_5
       occupancy: occupancy
 
@@ -208,7 +212,7 @@ air_quality:
         oil_diffuser:
           - humidifier.office_oil_diffuser
       sensors:
-        current_humidity:
+        humidity:
           - sensor.office_humidifier_current_humidity
           - sensor.office_oil_diffuser_current_humidity
         pm2_5:
